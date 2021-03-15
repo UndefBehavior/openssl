@@ -453,6 +453,8 @@ int ossl_cms_env_asn1_ctrl(CMS_RecipientInfo *ri, int cmd);
 int ossl_cms_pkey_get_ri_type(EVP_PKEY *pk);
 int ossl_cms_pkey_is_ri_type_supported(EVP_PKEY *pk, int ri_type);
 
+int ossl_cms_pkey_is_mma_vulnerable(EVP_PKEY *pk);
+
 void ossl_cms_RecipientInfos_set_cmsctx(CMS_ContentInfo *cms);
 
 /* KARI routines */

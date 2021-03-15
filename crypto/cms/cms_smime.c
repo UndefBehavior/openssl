@@ -15,6 +15,7 @@
 #include <openssl/cms.h>
 #include "cms_local.h"
 #include "crypto/asn1.h"
+#include "crypto/evp.h"
 
 static BIO *cms_get_text_bio(BIO *out, unsigned int flags)
 {
@@ -696,8 +697,8 @@ int CMS_decrypt_set1_pkey_and_peer(CMS_ContentInfo *cms, EVP_PKEY *pk,
 {
     STACK_OF(CMS_RecipientInfo) *ris;
     CMS_RecipientInfo *ri;
-    int i, r, cms_pkey_ri_type;
-    int debug = 0, match_ri = 0;
+    int i, r, cms_pkey_ri_type, is_mma_vulnerable;
+    int debug = 0, successful_decrypt = 0;
 
     ris = CMS_get0_RecipientInfos(cms);
     if (ris != NULL)
@@ -709,6 +710,8 @@ int CMS_decrypt_set1_pkey_and_peer(CMS_ContentInfo *cms, EVP_PKEY *pk,
          return 0;
     }
 
+    is_mma_vulnerable = ossl_cms_pkey_is_mma_vulnerable(pk);
+
     for (i = 0; i < sk_CMS_RecipientInfo_num(ris); i++) {
         int ri_type;
 
@@ -716,7 +719,6 @@ int CMS_decrypt_set1_pkey_and_peer(CMS_ContentInfo *cms, EVP_PKEY *pk,
         ri_type = CMS_RecipientInfo_type(ri);
         if (!ossl_cms_pkey_is_ri_type_supported(pk, ri_type))
             continue;
-        match_ri = 1;
         if (ri_type == CMS_RECIPINFO_AGREE) {
             r = cms_kari_set1_pkey_and_peer(cms, ri, pk, cert, peer);
             if (r > 0)
@@ -732,13 +734,14 @@ int CMS_decrypt_set1_pkey_and_peer(CMS_ContentInfo *cms, EVP_PKEY *pk,
             EVP_PKEY_up_ref(pk);
             CMS_RecipientInfo_set0_pkey(ri, pk);
             r = CMS_RecipientInfo_decrypt(cms, ri);
+            successful_decrypt |= (r ? 1 : 0);
             CMS_RecipientInfo_set0_pkey(ri, NULL);
             if (cert != NULL) {
                 /*
                  * If not debugging clear any error and return success to
                  * avoid leaking of information useful to MMA
                  */
-                if (!debug) {
+                if (!debug && is_mma_vulnerable) {
                     ERR_clear_error();
                     return 1;
                 }
@@ -752,14 +755,13 @@ int CMS_decrypt_set1_pkey_and_peer(CMS_ContentInfo *cms, EVP_PKEY *pk,
              * successful decrypt. Always attempt to decrypt all recipients
              * to avoid leaking timing of a successful decrypt.
              */
-            else if (r > 0 && (debug || cms_pkey_ri_type != CMS_RECIPINFO_TRANS))
+            else if (r > 0 && (debug || !is_mma_vulnerable))
                 return 1;
         }
     }
     /* If no cert, key transport and not debugging always return success */
     if (cert == NULL
-        && cms_pkey_ri_type == CMS_RECIPINFO_TRANS
-        && match_ri
+        && is_mma_vulnerable
         && !debug) {
         ERR_clear_error();
         return 1;

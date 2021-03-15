@@ -1341,3 +1341,18 @@ int ossl_cms_pkey_is_ri_type_supported(EVP_PKEY *pk, int ri_type)
 
     return (supportedRiType == ri_type);
 }
+
+int ossl_cms_pkey_is_mma_vulnerable(EVP_PKEY *pk)
+{
+    if (!EVP_PKEY_is_a(pk, "RSA"))
+        return 0;
+
+    if (pk->ameth && pk->ameth->pkey_ctrl) {
+        int i, r;
+        i = pk->ameth->pkey_ctrl(pk, ASN1_PKEY_CTRL_IS_MMA_VULNERABLE, 0, &r);
+        if (i > 0)
+            return r;
+    }
+
+    return 1;
+}
